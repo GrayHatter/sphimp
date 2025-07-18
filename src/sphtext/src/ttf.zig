@@ -406,6 +406,21 @@ pub const GlyphTable = struct {
 };
 
 pub const Ttf = struct {
+    head: HeadTable,
+    maxp: MaxpTable,
+    cmap: CmapTable,
+    loca: LocaSlice,
+    glyf: GlyphTable,
+    hhea: HheaTable,
+    hmtx: HmtxTable,
+
+    cmap_subtable: CmapTable.SubtableFormat4,
+
+    pub const LocaSlice = union(enum) {
+        u16: []const u16,
+        u32: []const u32,
+    };
+
     const HeaderTag = enum {
         cmap,
         head,
@@ -416,16 +431,6 @@ pub const Ttf = struct {
         hmtx,
     };
 
-    head: HeadTable,
-    maxp: MaxpTable,
-    cmap: CmapTable,
-    loca: []const u32,
-    glyf: GlyphTable,
-    hhea: HheaTable,
-    hmtx: HmtxTable,
-
-    cmap_subtable: CmapTable.SubtableFormat4,
-
     pub fn init(alloc: Allocator, font_data: []const u8) !Ttf {
         const offset_table = fixEndianness(std.mem.bytesToValue(OffsetTable, font_data[0 .. @bitSizeOf(OffsetTable) / 8]));
         const table_directory_start = @bitSizeOf(OffsetTable) / 8;
@@ -435,7 +440,7 @@ pub const Ttf = struct {
         var maxp: ?MaxpTable = null;
         var cmap: ?CmapTable = null;
         var glyf: ?GlyphTable = null;
-        var loca: ?[]const u32 = null;
+        var loca: ?LocaSlice = null;
         var hhea: ?HheaTable = null;
         var hmtx: ?HmtxTable = null;
 
@@ -451,7 +456,11 @@ pub const Ttf = struct {
                     hhea = fixEndianness(std.mem.bytesToValue(HheaTable, tableFromEntry(font_data, entry)));
                 },
                 .loca => {
-                    loca = try fixSliceEndianness(u32, alloc, @alignCast(std.mem.bytesAsSlice(u32, tableFromEntry(font_data, entry))));
+                    loca = switch (head.?.index_to_loc_format) {
+                        0 => .{ .u16 = try fixSliceEndianness(u16, alloc, std.mem.bytesAsSlice(u16, tableFromEntry(font_data, entry))) },
+                        1 => .{ .u32 = try fixSliceEndianness(u32, alloc, std.mem.bytesAsSlice(u32, tableFromEntry(font_data, entry))) },
+                        else => @panic("These are the only two options that could exist.... I promise!"),
+                    };
                 },
                 .maxp => {
                     maxp = fixEndianness(std.mem.bytesToValue(MaxpTable, tableFromEntry(font_data, entry)));
@@ -471,7 +480,7 @@ pub const Ttf = struct {
         const head_unwrapped = head orelse return error.NoHead;
 
         // Otherwise locs are the wrong size
-        std.debug.assert(head_unwrapped.index_to_loc_format == 1);
+        std.debug.assert(head_unwrapped.index_to_loc_format < 2);
         // Magic is easy to check
         std.debug.assert(head_unwrapped.magic_number == 0x5F0F3CF5);
 
@@ -647,8 +656,10 @@ fn readSubtable(alloc: Allocator, cmap: CmapTable) !CmapTable.SubtableFormat4 {
 
 pub fn glyphHeaderForChar(ttf: Ttf, char: u16) ?GlyphTable.GlyphCommon {
     const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
-    const glyf_start = ttf.loca[glyph_index];
-    const glyf_end = ttf.loca[glyph_index + 1];
+    const glyf_start, const glyf_end = switch (ttf.loca) {
+        .u16 => |s| .{ s[glyph_index] * 2, s[glyph_index + 1] * 2 },
+        .u32 => |l| .{ l[glyph_index], l[glyph_index + 1] },
+    };
 
     if (glyf_start == glyf_end) return null;
 
@@ -657,8 +668,10 @@ pub fn glyphHeaderForChar(ttf: Ttf, char: u16) ?GlyphTable.GlyphCommon {
 
 pub fn glyphForChar(alloc: Allocator, ttf: Ttf, char: u16) !?GlyphTable.SimpleGlyph {
     const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
-    const glyf_start = ttf.loca[glyph_index];
-    const glyf_end = ttf.loca[glyph_index + 1];
+    const glyf_start, const glyf_end = switch (ttf.loca) {
+        .u16 => |s| .{ s[glyph_index] * 2, s[glyph_index + 1] * 2 },
+        .u32 => |l| .{ l[glyph_index], l[glyph_index + 1] },
+    };
 
     if (glyf_start == glyf_end) return null;
 
