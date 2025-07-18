@@ -657,7 +657,7 @@ fn readSubtable(alloc: Allocator, cmap: CmapTable) !CmapTable.SubtableFormat4 {
 pub fn glyphHeaderForChar(ttf: Ttf, char: u16) ?GlyphTable.GlyphCommon {
     const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
     const glyf_start, const glyf_end = switch (ttf.loca) {
-        .u16 => |s| .{ s[glyph_index] * 2, s[glyph_index + 1] * 2 },
+        .u16 => |s| .{ @as(u32, s[glyph_index]) * 2, @as(u32, s[glyph_index + 1]) * 2 },
         .u32 => |l| .{ l[glyph_index], l[glyph_index + 1] },
     };
 
@@ -669,7 +669,7 @@ pub fn glyphHeaderForChar(ttf: Ttf, char: u16) ?GlyphTable.GlyphCommon {
 pub fn glyphForChar(alloc: Allocator, ttf: Ttf, char: u16) !?GlyphTable.SimpleGlyph {
     const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
     const glyf_start, const glyf_end = switch (ttf.loca) {
-        .u16 => |s| .{ s[glyph_index] * 2, s[glyph_index + 1] * 2 },
+        .u16 => |s| .{ @as(u32, s[glyph_index]) * 2, @as(u32, s[glyph_index + 1]) * 2 },
         .u32 => |l| .{ l[glyph_index], l[glyph_index + 1] },
     };
 
